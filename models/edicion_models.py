@@ -2,17 +2,20 @@
 
 from pydantic import BaseModel, Field
 from datetime import date
-from typing import Optional, Dict, Any, Literal
+from typing import Optional, Dict, Any, Literal, List
 from datetime import datetime
 from enum import Enum
 
 class SolicitarEdicionMision(BaseModel):
-    """Modelo para solicitar edición de una misión"""
+    """Modelo para solicitar edición de una misión (formato estandarizado)"""
     no_mision: Optional[str] = Field(None, description="Número de misión")
     id_mision: Optional[str] = Field(None, description="ID de misión")
     dui_solicitante: str = Field(..., description="DUI del usuario que solicita la edición")
-    #descripcion: str = Field(..., min_length=10, description="Descripción/observación de los cambios solicitados")
-    kilometraje_inicial: int = Field(...,description="Kilometraje inicial del vehiculo")
+    kilometraje_inicial: int = Field(..., description="Kilometraje inicial del vehiculo")
+    descripcion: str = Field(..., min_length=10, description="Descripción del cambio solicitado")
+    razon: Optional[str] = Field("correccion", description="Razón del cambio")
+    origen: Optional[str] = Field("manual", description="Origen de la solicitud")
+    flujo: Optional[str] = Field("completo", description="Flujo de aprobación")
 
     class Config:
         json_schema_extra = {
@@ -20,8 +23,11 @@ class SolicitarEdicionMision(BaseModel):
                 "id_mision": "9700073k6-3a61-4441-a2fd-235576204093",
                 "no_mision": "12345678-9.P001.1",
                 "dui_solicitante": "12345678-9",
-                #: "Solicito corrección de kilometraje inicial de 1000 a 1500 km"
-                "kilometraje_inicial": 1500
+                "kilometraje_inicial": 1500,
+                "descripcion": "Solicito corrección de kilometraje inicial de 1000 a 1500 km",
+                "razon": "correccion",
+                "origen": "manual",
+                "flujo": "completo"
             }
         }
 
