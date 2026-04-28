@@ -945,26 +945,26 @@ def editar_mision(data: EditarMision, current_user: dict = None) -> bool:
             {"$set": update_data}
         )
         
-        # Si la actualización fue exitosa, guardar bitácora
+        # Si la actualización fue exitosa, guardar solicitud y bitácora
         if updated_count > 0 and current_user:
-            editor_dui = current_user.get("Dui") or current_user.get("dui") or "desconocido"
-            editor_nombre = current_user.get("FullName") or current_user.get("full_name") or ""
-            
+            editor = _extraer_info_usuario(current_user)
+
+            _guardar_solicitud_directa_estandarizada(
+                tipo="mision_edicion",
+                mision=mision_original,
+                datos_anteriores=campos_anteriores,
+                datos_solicitados=update_data,
+                editor=editor,
+                descripcion=descripcion,
+                id_factura=None
+            )
+
             _guardar_bitacora_mision_directo(
                 mision_original=mision_original,
                 cambios_aplicados=update_data,
                 campos_anteriores=campos_anteriores,
-                editor_dui=editor_dui,
-                editor_nombre=editor_nombre
-            )
-
-            _guardar_solicitud_mision_directa_aplicada(
-                mision_original=mision_original,
-                cambios_aplicados=update_data,
-                campos_anteriores=campos_anteriores,
-                editor_dui=editor_dui,
-                editor_nombre=editor_nombre,
-                descripcion=descripcion
+                editor_dui=editor["dui"],
+                editor_nombre=editor["name"]
             )
 
         return updated_count > 0
@@ -1321,13 +1321,22 @@ def editar_factura(data: EditarFactura, current_user: dict = None) -> bool:
 
     # Buscar la factura a editar y capturar valores anteriores
     factura_encontrada = False
+    factura_index = None
     factura_anterior = None
     cambios_factura = {}
     
-    for factura in facturas:
+    for idx, factura in enumerate(facturas):
         if factura.get("IdFactura") == data.id_factura:
             factura_encontrada = True
-            factura_anterior = factura.copy()  # Snapshot de la factura antes
+            factura_index = idx
+
+            # Snapshot completo de la factura ANTES de cambios
+            factura_anterior = {
+                "NumeroFactura": factura.get("NumeroFactura"),
+                "CantidadGalones": factura.get("CantidadGalones"),
+                "CantidadDolares": factura.get("CantidadDolares"),
+                "Cupones": factura.get("Cupones", [])
+            }
 
             # Actualizar solo los campos proporcionados
             if data.numero_factura is not None:
@@ -1358,6 +1367,32 @@ def editar_factura(data: EditarFactura, current_user: dict = None) -> bool:
             detail=f"Factura con IdFactura {data.id_factura} no encontrada en la misión"
         )
 
+    # Preparar campos anteriores (solo los que se modificaron)
+    campos_anteriores_bitacora = {campo: factura_anterior.get(campo) for campo in cambios_factura.keys()}
+
+    # Guardar solicitud ANTES de la actualización para obtener el IdSolicitud real
+    id_solicitud_guardado = None
+    if current_user:
+        editor = _extraer_info_usuario(current_user)
+
+        id_solicitud_guardado = _guardar_solicitud_directa_estandarizada(
+            tipo="factura_edicion",
+            mision=mision,
+            datos_anteriores=factura_anterior,
+            datos_solicitados=cambios_factura,
+            editor=editor,
+            descripcion=data.descripcion,
+            id_factura=data.id_factura
+        )
+
+    # Actualizar SolicitudActiva en la factura con el IdSolicitud real
+    facturas[factura_index]["SolicitudActiva"] = {
+        "IdSolicitud": id_solicitud_guardado,
+        "type": "factura_edicion",
+        "status": "applied",
+        "applied_at": datetime.utcnow()
+    }
+
     # Actualizar la misión con las facturas modificadas
     updated_count = update_document(
         COLLECTION,
@@ -1376,40 +1411,18 @@ def editar_factura(data: EditarFactura, current_user: dict = None) -> bool:
             detail="No se pudo actualizar la factura"
         )
 
-    # Si la actualización fue exitosa, guardar bitácora
+    # Guardar bitácora
     if current_user:
-        editor_dui = current_user.get("Dui") or current_user.get("dui") or "desconocido"
-        editor_nombre = current_user.get("FullName") or current_user.get("full_name") or ""
-        
-        # Preparar campos anteriores (solo los que se modificaron)
-        campos_anteriores = {}
-        for campo in cambios_factura.keys():
-            campos_anteriores[campo] = factura_anterior.get(campo)
-        
         _guardar_bitacora_factura_directo(
             id_mision=data.id_mision,
             no_mision=mision.get("NoMision"),
             id_factura=data.id_factura,
             cambios_aplicados=cambios_factura,
-            campos_anteriores=campos_anteriores,
-            editor_dui=editor_dui,
-            editor_nombre=editor_nombre,
+            campos_anteriores=campos_anteriores_bitacora,
+            editor_dui=editor["dui"],
+            editor_nombre=editor["name"],
             placa=mision.get("Placa"),
             dui=mision.get("Dui")
-        )
-
-        _guardar_solicitud_factura_directa_aplicada(
-            id_mision=data.id_mision,
-            no_mision=mision.get("NoMision"),
-            id_factura=data.id_factura,
-            cambios_aplicados=cambios_factura,
-            campos_anteriores=campos_anteriores,
-            editor_dui=editor_dui,
-            editor_nombre=editor_nombre,
-            placa=mision.get("Placa"),
-            dui=mision.get("Dui"),
-            descripcion=data.descripcion,
-            review_observations=data.review_observations
         )
 
     logging.info(f"Factura {data.id_factura} editada en misión {data.id_mision}")
@@ -1730,74 +1743,129 @@ def _guardar_bitacora_mision_directo(
         )
 
 
-def _guardar_solicitud_mision_directa_aplicada(
-    mision_original: dict,
-    cambios_aplicados: dict,
-    campos_anteriores: dict,
-    editor_dui: str,
-    editor_nombre: str = "",
-    descripcion: str = None
-):
+def _extraer_info_usuario(current_user: dict) -> dict:
     """
-    Guarda una solicitud aplicada para ediciones directas de misión.
+    Extrae información del usuario en formato estandarizado.
+    Maneja diferentes formatos de entrada.
+    """
+    return {
+        "dui": current_user.get("Dui") or current_user.get("dui") or "desconocido",
+        "name": current_user.get("FullName") or current_user.get("full_name") or ""
+    }
 
-    Se usa la misma colección de solicitudes para mantener trazabilidad homogénea
-    con las flujos de aprobación, pero marcando la edición como directa y aplicada.
+
+def _guardar_solicitud_directa_estandarizada(
+    tipo: str,
+    mision: dict,
+    datos_anteriores: dict,
+    datos_solicitados: dict,
+    editor: dict,
+    descripcion: str = None,
+    id_factura: str = None
+) -> str:
+    """
+    Guarda una solicitud de edición directa con formato estandarizado V2.
+    Compatible con el formato de solicitud_edicion_service.py
+
+    Args:
+        tipo: Tipo de solicitud (mision_edicion o factura_edicion)
+        mision: Documento de la misión
+        datos_anteriores: Valores antes del cambio
+        datos_solicitados: Valores nuevos aplicados
+        editor: Info del usuario que editó {"dui": ..., "name": ...}
+        descripcion: Descripción opcional del cambio
+        id_factura: ID de factura (solo para ediciones de factura)
+
+    Returns:
+        str: ID de la solicitud creada
     """
     try:
         fecha_evento = datetime.now(timezone.utc)
         id_solicitud = str(uuid.uuid4())
 
-        cambios_filtrados = {
+        # Filtrar campos técnicos
+        datos_solicitados_filtrados = {
             campo: valor
-            for campo, valor in cambios_aplicados.items()
-            if campo != "TimeStampActualizacion"
-        }
-        datos_actuales = {
-            campo: campos_anteriores.get(campo)
-            for campo in cambios_filtrados.keys()
-        }
-
-        editor_data = {
-            "dui": editor_dui,
-            "name": editor_nombre
+            for campo, valor in datos_solicitados.items()
+            if campo not in ["TimeStampActualizacion", "TimeStampEdicion"]
         }
 
         documento_solicitud = {
+            # Identificación
             "IdSolicitud": id_solicitud,
-            "type": "mision_edicion",
-            "solicitud_type": "mision_edicion_directa",
-            "tipo_edicion": "direct",
-            "NoMision": mision_original.get("NoMision"),
-            "IdMision": mision_original.get("IdMision"),
-            "Placa": mision_original.get("Placa"),
-            "Dui": mision_original.get("Dui"),
-            "requested_by": editor_data,
-            "descripcion": descripcion,
-            "datos_actuales_mision": datos_actuales,
-            "cambios_solicitados": cambios_filtrados,
+            "type": tipo,
+
+            # Contexto de la misión
+            "NoMision": mision.get("NoMision"),
+            "IdMision": mision.get("IdMision"),
+            "Placa": mision.get("Placa"),
+            "Dui": mision.get("Dui"),
+
+            # Metadata estandarizada
+            "metadata": {
+                "origen": "directo",
+                "flujo": "simplificado",
+                "prioridad": "normal",
+                "razon": "correccion"
+            },
+
+            # Formato unificado
+            "datos_anteriores": datos_anteriores,
+            "datos_solicitados": datos_solicitados_filtrados,
+
+            # Descripción
+            "descripcion": descripcion or "Edición directa aplicada",
+            "observaciones_adicionales": None,
+
+            # Estado (ya aplicado)
             "status": "applied",
-            "reviewed_by": editor_data,
-            "review_observations": "Edición directa aplicada sin flujo de solicitud.",
+            "applied": True,
+
+            # Usuario (mismo en todos los roles para edición directa)
+            "requested_by": editor,
+            "reviewed_by": editor,
+            "applied_by": editor,
+
+            # Observaciones
+            "review_observations": "Edición directa aplicada sin flujo de aprobación",
+
+            # Timestamps (todos iguales para edición directa)
             "created_at": fecha_evento,
             "reviewed_at": fecha_evento,
-            "applied": True,
             "applied_at": fecha_evento,
-            "applied_by": editor_data
+            "TimeStampCreacion": fecha_evento,
+            "TimeStampActualizacion": fecha_evento,
+
+            # Auditoría
+            "auditoria": {
+                "intentos_aprobacion": 0,
+                "modificado_por": [],
+                "ip_origen": None,
+                "dispositivo": "web"
+            }
         }
+
+        # Agregar IdFactura si aplica
+        if id_factura:
+            documento_solicitud["IdFactura"] = id_factura
 
         insert_document(SOLICITUDES_EDICION, documento_solicitud)
 
         logger.info(
-            f"[Solicitud][Direct] Solicitud aplicada guardada | NoMision={mision_original.get('NoMision')} "
-            f"Editor={editor_dui} | IdSolicitud={id_solicitud}"
+            f"[Solicitud][Direct][V2] Solicitud estandarizada guardada | "
+            f"Tipo={tipo} NoMision={mision.get('NoMision')} Editor={editor['dui']} | "
+            f"IdSolicitud={id_solicitud}"
         )
+
+        return id_solicitud
 
     except Exception as e:
         logger.error(
-            f"[Solicitud][Direct] Error guardando solicitud aplicada | NoMision={mision_original.get('NoMision')} | {e}",
+            f"[Solicitud][Direct][V2] Error guardando solicitud | "
+            f"Tipo={tipo} NoMision={mision.get('NoMision')} | {e}",
             exc_info=True
         )
+        return None
 
 
 def _guardar_bitacora_factura_directo(
@@ -1862,68 +1930,4 @@ def _guardar_bitacora_factura_directo(
         )
 
 
-def _guardar_solicitud_factura_directa_aplicada(
-    id_mision: str,
-    no_mision: str,
-    id_factura: str,
-    cambios_aplicados: dict,
-    campos_anteriores: dict,
-    editor_dui: str,
-    editor_nombre: str = "",
-    placa: str = None,
-    dui: str = None,
-    descripcion: str = None,
-    review_observations: str = None
-):
-    """
-    Guarda una solicitud aplicada para ediciones directas de factura.
-
-    Usa la misma colección de solicitudes y marca el flujo como edición directa aplicada.
-    """
-    try:
-        fecha_evento = datetime.now(timezone.utc)
-        id_solicitud = str(uuid.uuid4())
-
-        editor_data = {
-            "dui": editor_dui,
-            "name": editor_nombre
-        }
-
-        documento_solicitud = {
-            "IdSolicitud": id_solicitud,
-            "type": "factura_edicion",
-            "solicitud_type": "factura_edicion_directa",
-            "tipo_edicion": "direct",
-            "NoMision": no_mision,
-            "IdMision": id_mision,
-            "IdFactura": id_factura,
-            "Placa": placa,
-            "Dui": dui,
-            "requested_by": editor_data,
-            "descripcion": descripcion,
-            "datos_actuales_factura": campos_anteriores,
-            "cambios_solicitados": cambios_aplicados,
-            "status": "applied",
-            "reviewed_by": editor_data,
-            "review_observations": review_observations or "Edición directa de factura aplicada sin flujo de solicitud.",
-            "created_at": fecha_evento,
-            "reviewed_at": fecha_evento,
-            "applied": True,
-            "applied_at": fecha_evento,
-            "applied_by": editor_data
-        }
-
-        insert_document(SOLICITUDES_EDICION, documento_solicitud)
-
-        logger.info(
-            f"[Solicitud][Factura][Direct] Solicitud aplicada guardada | "
-            f"NoMision={no_mision} IdFactura={id_factura} Editor={editor_dui} | IdSolicitud={id_solicitud}"
-        )
-
-    except Exception as e:
-        logger.error(
-            f"[Solicitud][Factura][Direct] Error guardando solicitud aplicada | "
-            f"NoMision={no_mision} IdFactura={id_factura} | {e}",
-            exc_info=True
-        )
 
