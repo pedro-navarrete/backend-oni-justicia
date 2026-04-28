@@ -338,6 +338,16 @@ def solicitar_edicion_mision(data: SolicitarEdicionMision, current_user: dict) -
     # Crear la solicitud
     id_solicitud = str(uuid.uuid4())
 
+    datos_anteriores = {"KilometrajeInicial": kilometraje_actual}
+    datos_solicitados = {"KilometrajeInicial": data.kilometraje_inicial}
+
+    metadata = {
+        "origen": data.origen or "manual",
+        "flujo": data.flujo or "completo",
+        "prioridad": "normal",
+        "razon": data.razon or "correccion"
+    }
+
     documento_solicitud = {
         "IdSolicitud": id_solicitud,
         "type": TipoSolicitud.MISION_EDICION,
@@ -346,14 +356,27 @@ def solicitar_edicion_mision(data: SolicitarEdicionMision, current_user: dict) -
         "Placa": mision.get("Placa"),
         "Dui": mision.get("Dui"),
         "requested_by": _crear_info_usuario(user),
-        "kilometraje_inicial_anterior": kilometraje_actual,
-        "requested_changes_KilometrajeInicial": data.kilometraje_inicial,
+        "descripcion": data.descripcion,
+        "metadata": metadata,
+        "datos_anteriores": datos_anteriores,
+        "datos_solicitados": datos_solicitados,
+        "observaciones_adicionales": None,
         "status": EstadoSolicitud.PENDING,
         "applied": False,
         "reviewed_by": None,
         "review_observations": None,
+        "applied_by": None,
         "created_at": datetime.now(timezone.utc),
-        "reviewed_at": None
+        "reviewed_at": None,
+        "applied_at": None,
+        "TimeStampCreacion": datetime.now(timezone.utc),
+        "TimeStampActualizacion": datetime.now(timezone.utc),
+        "auditoria": {
+            "intentos_aprobacion": 0,
+            "modificado_por": [],
+            "ip_origen": None,
+            "dispositivo": None
+        }
     }
 
     insert_document(COLLECTION_SOLICITUDES, documento_solicitud)
@@ -947,19 +970,36 @@ def solicitar_edicion_factura(data: SolicitarEdicionFactura, current_user: dict)
         "Dui": mision.get("Dui"),
         "requested_by": _crear_info_usuario(user),
         "descripcion": data.descripcion,
-        "datos_actuales_factura": {
+        "metadata": {
+            "origen": "manual",
+            "flujo": "completo",
+            "prioridad": "normal",
+            "razon": "correccion"
+        },
+        "datos_anteriores": {
             "NumeroFactura": factura.get("NumeroFactura"),
             "CantidadGalones": factura.get("CantidadGalones"),
             "CantidadDolares": factura.get("CantidadDolares"),
             "Cupones": factura.get("Cupones", [])
         },
-        "cambios_solicitados": cambios_solicitados,
+        "datos_solicitados": cambios_solicitados,
+        "observaciones_adicionales": None,
         "status": EstadoSolicitud.PENDING,
         "applied": False,
         "reviewed_by": None,
         "review_observations": None,
+        "applied_by": None,
         "created_at": datetime.now(timezone.utc),
-        "reviewed_at": None
+        "reviewed_at": None,
+        "applied_at": None,
+        "TimeStampCreacion": datetime.now(timezone.utc),
+        "TimeStampActualizacion": datetime.now(timezone.utc),
+        "auditoria": {
+            "intentos_aprobacion": 0,
+            "modificado_por": [],
+            "ip_origen": None,
+            "dispositivo": None
+        }
     }
 
     insert_document(COLLECTION_SOLICITUDES, documento_solicitud)
@@ -1045,19 +1085,37 @@ def solicitar_eliminacion_factura(data: SolicitarEliminacionFactura, current_use
         "Dui": mision.get("Dui"),
         "requested_by": _crear_info_usuario(user),
         "descripcion": data.descripcion,
-        "datos_actuales_factura": {
+        "metadata": {
+            "origen": "manual",
+            "flujo": "completo",
+            "prioridad": "normal",
+            "razon": "duplicado"
+        },
+        "datos_anteriores": {
             "NumeroFactura": factura.get("NumeroFactura"),
             "CantidadGalones": factura.get("CantidadGalones"),
             "CantidadDolares": factura.get("CantidadDolares"),
             "FechaFactura": factura.get("FechaFactura"),
             "Cupones": factura.get("Cupones", [])
         },
+        "datos_solicitados": {},
+        "observaciones_adicionales": None,
         "status": EstadoSolicitud.PENDING,
         "applied": False,
         "reviewed_by": None,
         "review_observations": None,
+        "applied_by": None,
         "created_at": datetime.now(timezone.utc),
-        "reviewed_at": None
+        "reviewed_at": None,
+        "applied_at": None,
+        "TimeStampCreacion": datetime.now(timezone.utc),
+        "TimeStampActualizacion": datetime.now(timezone.utc),
+        "auditoria": {
+            "intentos_aprobacion": 0,
+            "modificado_por": [],
+            "ip_origen": None,
+            "dispositivo": None
+        }
     }
 
     insert_document(COLLECTION_SOLICITUDES, documento_solicitud)
@@ -1177,8 +1235,9 @@ def _aplicar_cambios_factura(
 
     for factura in facturas:
         if factura.get("IdFactura") == solicitud["IdFactura"]:
-            # Aplicar los cambios solicitados
-            cambios_solicitados = solicitud.get("cambios_solicitados", {})
+            # Aplicar los cambios solicitados (nuevo formato: datos_solicitados, legacy: cambios_solicitados)
+            datos_solicitados_val = solicitud.get("datos_solicitados")
+            cambios_solicitados = datos_solicitados_val if datos_solicitados_val is not None else solicitud.get("cambios_solicitados", {})
 
             for campo, valor_nuevo in cambios_solicitados.items():
                 valor_anterior = factura.get(campo)
