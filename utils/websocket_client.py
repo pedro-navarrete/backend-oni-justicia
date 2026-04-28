@@ -1,24 +1,46 @@
-import os
 import json
+import os
 import logging
+from datetime import datetime, date
+from typing import Any, Dict
 
-WEBSOCKET_URL = os.getenv('WEBSOCKET_URL')
-WEBSOCKET_TOKEN = os.getenv('WEBSOCKET_TOKEN')
-
-if WEBSOCKET_URL is None or WEBSOCKET_TOKEN is None:
-    raise RuntimeError('WEBSOCKET_URL and WEBSOCKET_TOKEN must be set as environment variables')
+import websockets
 
 logger = logging.getLogger(__name__)
 
-def json_serializer(data):
+
+def json_serializer(obj: Any):
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    raise TypeError(f"Tipo no serializable: {type(obj)}")
+
+
+async def enviar_por_websocket(category: str, data: Dict[str, Any]):
+    """
+    Envía un mensaje estructurado por WebSocket.
+
+    Estructura:
+    {
+        "category": "<category>",
+        "data": { ... }
+    }
+    """
+    websocket_url = os.getenv("WEBSOCKET_URL")
+    websocket_token = os.getenv("WEBSOCKET_TOKEN")
+
+    if not websocket_url or not websocket_token:
+        raise RuntimeError("WEBSOCKET_URL o WEBSOCKET_TOKEN no están configurados en el entorno")
+
+    payload = {"category": category, "data": data}
+    ws_url = f"{websocket_url}?token={websocket_token}"
+
     try:
-        return json.dumps(data)
-    except (TypeError, ValueError) as e:
-        logger.error("Failed to serialize data: %s", e)
+        logger.info("Conectando a WebSocket: %s", ws_url)
+        async with websockets.connect(ws_url) as websocket:
+            await websocket.send(json.dumps(payload, default=json_serializer))
+
+        logger.info("Mensaje WebSocket enviado | category=%s", category)
+
+    except Exception:
+        logger.exception("Error enviando mensaje por WebSocket")
         raise
-
-
-def enviar_por_websocket(data):
-    serialized_data = json_serializer(data)
-    # Logic to send the serialized data over websocket...
-    logger.info('Data sent over websocket: %s', serialized_data)

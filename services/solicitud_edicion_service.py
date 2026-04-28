@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from fastapi import HTTPException
 from database.verificador_mongo import ejecutar_query, insert_document, update_document, get_db, ejecutar_query_V3
 from models.edicion_models import *
+from utils.websocket_client import enviar_por_websocket
 
 # Colecciones
 COLLECTION_MISIONES = "Misiones"
@@ -22,68 +23,12 @@ COLLECTION_USERS = "users"
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-
-# Configuración desde ENV
-WEBSOCKET_URL = os.getenv("WEBSOCKET_URL")
-WEBSOCKET_TOKEN = os.getenv("WEBSOCKET_TOKEN")
-
-if not WEBSOCKET_URL or not WEBSOCKET_TOKEN:
-    raise RuntimeError("WEBSOCKET_URL o WEBSOCKET_TOKEN no están configurados en el entorno")
-
-
-# ---------------- Serializador JSON ----------------
-def json_serializer(obj: Any):
-    if isinstance(obj, (datetime, date)):
-        return obj.isoformat()
-    raise TypeError(f"Tipo no serializable: {type(obj)}")
-
-# ---------------- Envío WebSocket ----------------
-async def enviar_por_websocket(
-    category: str,
-    data: Dict[str, Any],
-):
-    """
-    Envía un mensaje estructurado por WebSocket.
-
-    Estructura enviada:
-    {
-        "category": "<category>",
-        "data": { ... }
-    }
-    """
-
-    payload = {
-        "category": category,
-        "data": data
-    }
-
-    ws_url = f"{WEBSOCKET_URL}?token={WEBSOCKET_TOKEN}"
-
-    try:
-        logger.info("Conectando a WebSocket: %s", ws_url)
-        async with websockets.connect(ws_url) as websocket:
-            await websocket.send(
-                json.dumps(payload, default=json_serializer)
-            )
-
-            print(payload)
-
-            logger.info(
-                "Mensaje WebSocket enviado | category=%s", category
-            )
-
-    except Exception as e:
-        logger.exception("Error enviando mensaje por WebSocket")
-        raise e
-
 # ==================== SOLICITAR EDICIÓN ====================
 def solicitar_edicion_mision(data: SolicitarEdicionMision, current_user: dict) -> str:
     """
     Crea una solicitud para editar una misión.
     Requiere: NoMision o IdMision, DUI del solicitante y descripción.
     """
-
-
 
     # Validar que se proporcione al menos uno
     if not data.no_mision and not data.id_mision:
@@ -177,12 +122,7 @@ def solicitar_edicion_mision(data: SolicitarEdicionMision, current_user: dict) -
             "fecha_solicitud": documento_solicitud["created_at"]
         }
 
-        asyncio.run(
-            enviar_por_websocket(
-                category="solicitud_creada",
-                data=ws_data
-            )
-        )
+        asyncio.run(enviar_por_websocket(category="solicitud_creada", data=ws_data))
         logger.info(f"Notificación WebSocket enviada para solicitud {id_solicitud}")
     except Exception as e:
         logger.error(f"Error enviando notificación WebSocket: {e}")
