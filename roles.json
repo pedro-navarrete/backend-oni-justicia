@@ -1,0 +1,63 @@
+{
+  "WEB_USER": {
+    "description": "Usuarios de la plataforma web",
+    "permissions": [
+      "/vehiculos/manage",
+      "/vehiculos/status",
+      "/mision/get",
+      "/users/manage",
+      "/users/users",
+      "/users/motoristas",
+      "/verificar/duiyplaca",
+      "/mision/editar",
+      "/mision/revisar-solicitud",
+      "/mision/editar-con-solicitud",
+      "/mision/solicitudes",
+      "/mision/bitacora-cambios",
+      "/mision/getSolicitud",
+      "/mision/factura/agregar",
+      "/mision/factura/editar",
+      "/mision/facturas",
+      "/mision/factura/eliminar",
+      "/mision/factura/solicitar-edicion",
+      "/mision/factura/solicitar-eliminacion",
+      "/mision/factura/editar-con-solicitud",
+      "/mision/factura/eliminar-con-solicitud",
+      "/mision/solicitudes/listado",
+      "/mision/solicitudes/estadisticas",
+      "/mision/editar-completa",
+      "/mision/detalle-completo",
+      "/mision/misiones_solicitadas",
+      "/mision/forzar-final",
+      "/mision/inicio-final",
+      "/mision/coordenada",
+      "/mision/solicitudes-resumen"
+    ]
+  },
+  "ANDROID_USER": {
+    "description": "Usuarios de la app Android",
+    "permissions": [
+      "/verificar/duiyplaca",
+      "/vehiculos/status",
+      "/mision/crear",
+      "/mision/inicio-final",
+      "/mision/coordenada",
+      "/mision/actualizar",
+      "/mision/get",
+      "/users/motoristas",
+      "/mision/get-kilometraje",
+      "/mision/solicitar-edicion",
+      "/mision/getSolicitud",
+      "/mision/factura/agregar",
+      "/mision/factura/editar",
+      "/mision/facturas",
+      "/mision/factura/eliminar",
+      "/mision/factura/solicitar-edicion",
+      "/mision/factura/solicitar-eliminacion",
+      "/mision/factura/editar-con-solicitud",
+      "/mision/factura/eliminar-con-solicitud",
+      "/mision/misiones_solicitadas",
+      "/mision/forzar-final"
+    ]
+  }
+}
