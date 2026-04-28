@@ -1,5 +1,6 @@
 # services/mision_estadisticas_services.py
 
+import copy
 from datetime import datetime, date
 from typing import Optional, Dict, Any
 from database.verificador_mongo import get_db, ejecutar_query_V3, count_documents
@@ -20,12 +21,14 @@ def obtener_estadisticas_solicitudes(
     """
     Obtiene estadísticas completas de las solicitudes de edición.
 
-    Estadísticas incluidas:
-    - Por estado: pending, approved, rejected, applied
-    - Por tipo: mision_edicion, factura_edicion, factura_eliminacion
-    - Por origen: manual, automatico, directo (nuevo formato V2)
-    - Por flujo: completo, simplificado (nuevo formato V2)
-    - Solicitudes aplicadas vs no aplicadas
+    Estados posibles (campo status):
+    - pending: Esperando revisión
+    - approved: Aprobada por supervisor
+    - rejected: Rechazada
+
+    Campo applied (boolean):
+    - true: Solicitud ejecutada/aplicada
+    - false: Solicitud NO ejecutada
 
     Args:
         fecha_inicio: Fecha inicial del rango de búsqueda
@@ -149,18 +152,35 @@ def obtener_estadisticas_solicitudes(
 
         resultados_combinado = list(db[SOLICITUDES_EDICION].aggregate(pipeline_combinado))
 
+        # ==================== PENDIENTES DE APLICACIÓN ====================
+        # Solicitudes aprobadas pero NO aplicadas: status=approved AND applied=false
+        pipeline_pendientes_aplicar = []
+        filtro_pendientes = copy.deepcopy(match_stage) if match_stage else {}
+        filtro_pendientes["status"] = "approved"
+        filtro_pendientes["applied"] = {"$ne": True}  # false, null, o campo inexistente
+
+        pipeline_pendientes_aplicar.append({"$match": filtro_pendientes})
+        pipeline_pendientes_aplicar.append({
+            "$group": {
+                "_id": None,
+                "count": {"$sum": 1}
+            }
+        })
+
+        resultado_pendientes_aplicar = list(db[SOLICITUDES_EDICION].aggregate(pipeline_pendientes_aplicar))
+        pendientes_aplicacion = resultado_pendientes_aplicar[0]["count"] if resultado_pendientes_aplicar else 0
+
         # ==================== PROCESAR RESULTADOS ====================
 
         # Inicializar estructura de estadísticas
         estadisticas = {
             "total": 0,
 
-            # Por estado
+            # Por estado (solo 3 estados)
             "por_estado": {
                 "pending": 0,
                 "approved": 0,
-                "rejected": 0,
-                "applied": 0
+                "rejected": 0
             },
 
             # Por tipo
@@ -197,32 +217,31 @@ def obtener_estadisticas_solicitudes(
                     "total": 0,
                     "pending": 0,
                     "approved": 0,
-                    "rejected": 0,
-                    "applied": 0
+                    "rejected": 0
                 },
                 "factura_edicion": {
                     "total": 0,
                     "pending": 0,
                     "approved": 0,
-                    "rejected": 0,
-                    "applied": 0
+                    "rejected": 0
                 },
                 "factura_eliminacion": {
                     "total": 0,
                     "pending": 0,
                     "approved": 0,
-                    "rejected": 0,
-                    "applied": 0
+                    "rejected": 0
                 }
             }
         }
 
-        # Procesar resultados por estado
+        # Procesar resultados por estado (solo 3 estados válidos)
         for item in resultados_estado:
             status = item["_id"] or "pending"
             count = item["count"]
             estadisticas["total"] += count
-            if status in estadisticas["por_estado"]:
+
+            # Solo contar estados válidos
+            if status in ["pending", "approved", "rejected"]:
                 estadisticas["por_estado"][status] = count
 
         # Procesar resultados por tipo
@@ -250,13 +269,13 @@ def obtener_estadisticas_solicitudes(
             else:
                 estadisticas["por_flujo"]["sin_metadata"] += count
 
-        # Procesar resultados de aplicadas
+        # Procesar resultados de aplicadas (campo applied)
         for item in resultados_aplicadas:
             aplicada = item["_id"]
             count = item["count"]
-            if aplicada:
+            if aplicada is True:  # Explícitamente True
                 estadisticas["aplicacion"]["aplicadas"] = count
-            else:
+            else:  # False, null, o no existe
                 estadisticas["aplicacion"]["no_aplicadas"] = count
 
         # Procesar resultados combinados (tipo + estado)
@@ -267,7 +286,7 @@ def obtener_estadisticas_solicitudes(
 
             if tipo and tipo in estadisticas["detalle_por_tipo"]:
                 estadisticas["detalle_por_tipo"][tipo]["total"] += count
-                if status in estadisticas["detalle_por_tipo"][tipo]:
+                if status in ["pending", "approved", "rejected"]:
                     estadisticas["detalle_por_tipo"][tipo][status] = count
 
         # Agregar información de filtros aplicados
@@ -277,12 +296,12 @@ def obtener_estadisticas_solicitudes(
             "tipo_solicitud": tipo_solicitud
         }
 
-        # Agregar resumen útil
+        # ✅ RESUMEN EJECUTIVO CORREGIDO
         estadisticas["resumen"] = {
             "total": estadisticas["total"],
             "pendientes_revision": estadisticas["por_estado"]["pending"],
-            "pendientes_aplicacion": estadisticas["por_estado"]["approved"],
-            "aplicadas": estadisticas["aplicacion"]["aplicadas"],
+            "pendientes_aplicacion": pendientes_aplicacion,  # approved + applied=false
+            "aplicadas": estadisticas["aplicacion"]["aplicadas"],  # applied=true
             "rechazadas": estadisticas["por_estado"]["rejected"],
             "ediciones_directas": estadisticas["por_origen"]["directo"],
             "con_flujo_aprobacion": estadisticas["por_flujo"]["completo"]
@@ -290,9 +309,10 @@ def obtener_estadisticas_solicitudes(
 
         logger.info(
             f"Estadísticas obtenidas: Total={estadisticas['total']}, "
-            f"Pendientes={estadisticas['por_estado']['pending']}, "
+            f"Pendientes revisión={estadisticas['por_estado']['pending']}, "
             f"Aprobadas={estadisticas['por_estado']['approved']}, "
-            f"Aplicadas={estadisticas['aplicacion']['aplicadas']}"
+            f"Aplicadas={estadisticas['aplicacion']['aplicadas']}, "
+            f"Pendientes aplicación={pendientes_aplicacion}"
         )
 
         return estadisticas
@@ -325,7 +345,7 @@ def obtener_detalle_solicitudes(
         fecha_inicio: Fecha inicial del rango
         fecha_fin: Fecha final del rango
         tipo_solicitud: Tipo de solicitud
-        estado: Estado de la solicitud (approved, rejected, pending, applied)
+        estado: Estado de la solicitud (approved, rejected, pending)
         origen: Origen de la solicitud (manual, automatico, directo)
         flujo: Flujo de la solicitud (completo, simplificado)
         aplicada: Si la solicitud fue aplicada (true/false)
@@ -362,7 +382,7 @@ def obtener_detalle_solicitudes(
 
         # Filtro por estado
         if estado:
-            estados_validos = ["approved", "rejected", "pending", "applied"]
+            estados_validos = ["approved", "rejected", "pending"]
             if estado not in estados_validos:
                 raise HTTPException(
                     status_code=400,

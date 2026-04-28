@@ -89,7 +89,7 @@ def api_listado_solicitudes(
         ),
         estado: Optional[str] = Query(
             None,
-            description="Estado: pending, approved, rejected, applied"
+            description="Estado: pending, approved, rejected"
         ),
         origen: Optional[str] = Query(
             None,
@@ -120,7 +120,7 @@ def api_listado_solicitudes(
     - fecha_inicio: Fecha inicial del rango
     - fecha_fin: Fecha final del rango
     - tipo_solicitud: Tipo específico de solicitud
-    - estado: Estado de la solicitud (approved, rejected, pending, applied)
+    - estado: Estado de la solicitud (approved, rejected, pending)
     - origen: Origen de la solicitud (manual, automatico, directo)
     - flujo: Flujo de la solicitud (completo, simplificado)
     - aplicada: Si la solicitud fue aplicada (true/false)
