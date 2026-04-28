@@ -356,7 +356,7 @@ def solicitar_edicion_mision(data: SolicitarEdicionMision, current_user: dict) -
         "Placa": mision.get("Placa"),
         "Dui": mision.get("Dui"),
         "requested_by": _crear_info_usuario(user),
-        "descripcion": data.descripcion,
+        "descripcion": data.descripcion or "Solicitud de edición de Kilometraje de misión",
         "metadata": metadata,
         "datos_anteriores": datos_anteriores,
         "datos_solicitados": datos_solicitados,

@@ -18,6 +18,7 @@ from typing import Any, Dict
 import websockets
 from dotenv import load_dotenv
 from database.verificador_sqlserver import VerificadorSQL
+from utils.websocket_client import enviar_por_websocket
 
 
 COLLECTION = "Misiones"
@@ -122,59 +123,6 @@ def _actualizar_estados_sql(
             f"{type(e).__name__}: {e}",
             exc_info=True
         )
-
-
-# Configuración desde ENV
-WEBSOCKET_URL = os.getenv("WEBSOCKET_URL")
-WEBSOCKET_TOKEN = os.getenv("WEBSOCKET_TOKEN")
-
-if not WEBSOCKET_URL or not WEBSOCKET_TOKEN:
-    raise RuntimeError("WEBSOCKET_URL o WEBSOCKET_TOKEN no están configurados en el entorno")
-
-
-# ---------------- Serializador JSON ----------------
-def json_serializer(obj: Any):
-    if isinstance(obj, (datetime, date)):
-        return obj.isoformat()
-    raise TypeError(f"Tipo no serializable: {type(obj)}")
-
-# ---------------- Envío WebSocket ----------------
-async def enviar_por_websocket(
-    category: str,
-    data: Dict[str, Any],
-):
-    """
-    Envía un mensaje estructurado por WebSocket.
-
-    Estructura enviada:
-    {
-        "category": "<category>",
-        "data": { ... }
-    }
-    """
-
-    payload = {
-        "category": category,
-        "data": data
-    }
-
-    ws_url = f"{WEBSOCKET_URL}?token={WEBSOCKET_TOKEN}"
-
-    try:
-        logger.info("Conectando a WebSocket: %s", ws_url)
-        async with websockets.connect(ws_url) as websocket:
-            await websocket.send(
-                json.dumps(payload, default=json_serializer)
-            )
-
-            logger.info(
-                "Mensaje WebSocket enviado | category=%s", category
-            )
-
-    except Exception as e:
-        logger.exception("Error enviando mensaje por WebSocket")
-        raise e
-
 
 
 # -------------------- Crear misión --------------------

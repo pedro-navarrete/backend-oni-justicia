@@ -12,7 +12,7 @@ class SolicitarEdicionMision(BaseModel):
     id_mision: Optional[str] = Field(None, description="ID de misión")
     dui_solicitante: str = Field(..., description="DUI del usuario que solicita la edición")
     kilometraje_inicial: int = Field(..., description="Kilometraje inicial del vehiculo")
-    descripcion: str = Field(..., min_length=10, description="Descripción del cambio solicitado")
+    descripcion: Optional[str] = Field(None,min_length=10,description="Descripción del cambio solicitado")
     razon: Optional[str] = Field("correccion", description="Razón del cambio")
     origen: Optional[str] = Field("manual", description="Origen de la solicitud")
     flujo: Optional[str] = Field("completo", description="Flujo de aprobación")
