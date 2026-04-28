@@ -1,10 +1,10 @@
 # models/edicion_models.py - Agregar estos modelos
 
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
-from datetime import datetime
-from typing import Optional
 from datetime import date
+from typing import Optional, Dict, Any, Literal
+from datetime import datetime
+from enum import Enum
 
 class SolicitarEdicionMision(BaseModel):
     """Modelo para solicitar edición de una misión"""
@@ -188,5 +188,221 @@ class EstadisticasSolicitudesFiltro(BaseModel):
                 "fecha_inicio": "2026-01-01",
                 "fecha_fin": "2026-01-31",
                 "tipo_solicitud": "mision_edicion"
+            }
+        }
+
+
+
+
+
+# ==================== ENUMS ====================
+
+class TipoSolicitud(str, Enum):
+    MISION_EDICION = "mision_edicion"
+    FACTURA_EDICION = "factura_edicion"
+    FACTURA_ELIMINACION = "factura_eliminacion"
+
+
+class EstadoSolicitud(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    APPLIED = "applied"
+    CANCELLED = "cancelled"
+
+
+class OrigenSolicitud(str, Enum):
+    MANUAL = "manual"
+    AUTOMATICO = "automatico"
+    DIRECTO = "directo"
+
+
+class FlujoSolicitud(str, Enum):
+    COMPLETO = "completo"  # Requiere aprobación
+    SIMPLIFICADO = "simplificado"  # Edición directa
+
+
+class RazonSolicitud(str, Enum):
+    CORRECCION = "correccion"
+    ERROR_SISTEMA = "error_sistema"
+    DUPLICADO = "duplicado"
+    ACTUALIZACION = "actualizacion"
+    OTRO = "otro"
+
+
+# ==================== MODELOS BASE ====================
+
+class UsuarioInfo(BaseModel):
+    """Información estándar de usuario"""
+    dui: str
+    name: str
+    rol: Optional[str] = None
+
+
+class MetadataSolicitud(BaseModel):
+    """Metadata de la solicitud"""
+    origen: OrigenSolicitud = OrigenSolicitud.MANUAL
+    flujo: FlujoSolicitud = FlujoSolicitud.COMPLETO
+    prioridad: Optional[Literal["normal", "alta", "urgente"]] = "normal"
+    razon: Optional[RazonSolicitud] = RazonSolicitud.CORRECCION
+
+
+class AuditoriaSolicitud(BaseModel):
+    """Información de auditoría"""
+    intentos_aprobacion: int = 0
+    modificado_por: list = []
+    ip_origen: Optional[str] = None
+    dispositivo: Optional[Literal["web", "android", "api"]] = None
+
+
+# ==================== MODELO BASE DE SOLICITUD ====================
+
+class SolicitudBase(BaseModel):
+    """Modelo base para todas las solicitudes"""
+    # Identificación
+    type: TipoSolicitud
+
+    # Contexto de la misión
+    no_mision: Optional[str] = Field(None, alias="NoMision")
+    id_mision: Optional[str] = Field(None, alias="IdMision")
+    placa: Optional[str] = None
+    dui: Optional[str] = None
+
+    # Contexto específico
+    id_factura: Optional[str] = Field(None, description="Solo para solicitudes de facturas")
+
+    # Metadata
+    metadata: Optional[MetadataSolicitud] = Field(default_factory=MetadataSolicitud)
+
+    # Datos del cambio
+    datos_anteriores: Dict[str, Any] = Field(default_factory=dict)
+    datos_solicitados: Dict[str, Any] = Field(default_factory=dict)
+
+    # Descripción
+    descripcion: Optional[str] = None
+    observaciones_adicionales: Optional[str] = None
+
+    # Flujo de aprobación
+    status: EstadoSolicitud = EstadoSolicitud.PENDING
+    applied: bool = False
+
+    # Usuarios involucrados
+    requested_by: UsuarioInfo
+    reviewed_by: Optional[UsuarioInfo] = None
+    applied_by: Optional[UsuarioInfo] = None
+
+    # Observaciones
+    review_observations: Optional[str] = None
+
+    # Timestamps
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    reviewed_at: Optional[datetime] = None
+    applied_at: Optional[datetime] = None
+
+    # Auditoría
+    auditoria: Optional[AuditoriaSolicitud] = Field(default_factory=AuditoriaSolicitud)
+
+    class Config:
+        use_enum_values = True
+        populate_by_name = True
+
+
+# ==================== MODELOS ESPECÍFICOS PARA CREAR SOLICITUDES ====================
+
+class SolicitarEdicionMisionV2(BaseModel):
+    """Modelo para solicitar edición de una misión (versión estandarizada)"""
+    # Identificación de la misión
+    no_mision: Optional[str] = None
+    id_mision: Optional[str] = None
+
+    # Solicitante
+    dui_solicitante: str
+
+    # Cambios a realizar
+    kilometraje_inicial: Optional[int] = None
+    nombre_motorista: Optional[str] = None
+    marcador_tanque_inicial: Optional[float] = None
+    # Agregar más campos según necesites
+
+    # Contexto
+    descripcion: str = Field(..., min_length=10, description="Descripción del cambio")
+    razon: RazonSolicitud = RazonSolicitud.CORRECCION
+
+    # Metadata (opcional, se llena automáticamente si no se provee)
+    origen: OrigenSolicitud = OrigenSolicitud.MANUAL
+    flujo: FlujoSolicitud = FlujoSolicitud.COMPLETO
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "no_mision": "12345678-9.P001.1",
+                "dui_solicitante": "12345678-9",
+                "kilometraje_inicial": 1500,
+                "descripcion": "Corrección de kilometraje inicial según boleta de salida",
+                "razon": "correccion",
+                "origen": "manual"
+            }
+        }
+
+
+class SolicitarEdicionFacturaV2(BaseModel):
+    """Modelo para solicitar edición de una factura (versión estandarizada)"""
+    # Identificación
+    id_mision: str
+    id_factura: str
+    dui_solicitante: str
+
+    # Cambios
+    numero_factura: Optional[str] = None
+    cantidad_galones: Optional[float] = None
+    cantidad_dolares: Optional[float] = None
+    cupones: Optional[list] = None
+
+    # Contexto
+    descripcion: str = Field(..., min_length=10)
+    razon: RazonSolicitud = RazonSolicitud.CORRECCION
+
+    # Metadata
+    origen: OrigenSolicitud = OrigenSolicitud.MANUAL
+    flujo: FlujoSolicitud = FlujoSolicitud.COMPLETO
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "id_mision": "768c604b-cf14-468f-b3a5-fe3d16bd676e",
+                "id_factura": "453216fd-3a83-4c30-b18b-ec4687f424aa",
+                "dui_solicitante": "12345678-9",
+                "numero_factura": "pm_02525555",
+                "cantidad_galones": 39.0,
+                "cantidad_dolares": 50.0,
+                "descripcion": "Corrección de cantidad de galones por error de digitación",
+                "razon": "correccion"
+            }
+        }
+
+
+class SolicitarEliminacionFacturaV2(BaseModel):
+    """Modelo para solicitar eliminación de una factura (versión estandarizada)"""
+    # Identificación
+    id_mision: str
+    id_factura: str
+    dui_solicitante: str
+
+    # Contexto
+    descripcion: str = Field(..., min_length=10, alias="motivo")
+    razon: RazonSolicitud = RazonSolicitud.DUPLICADO
+
+    # Metadata
+    origen: OrigenSolicitud = OrigenSolicitud.MANUAL
+    flujo: FlujoSolicitud = FlujoSolicitud.COMPLETO
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "id_mision": "768c604b-cf14-468f-b3a5-fe3d16bd676e",
+                "id_factura": "453216fd-3a83-4c30-b18b-ec4687f424aa",
+                "dui_solicitante": "12345678-9",
+                "motivo": "Factura duplicada registrada por error",
+                "razon": "duplicado"
             }
         }
