@@ -1818,7 +1818,7 @@ def _guardar_solicitud_directa_estandarizada(
             "observaciones_adicionales": None,
 
             # Estado (ya aplicado)
-            "status": "applied",
+            "status": "approved",
             "applied": True,
 
             # Usuario (mismo en todos los roles para edición directa)
