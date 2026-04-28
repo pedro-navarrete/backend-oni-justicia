@@ -85,28 +85,31 @@ def api_listado_solicitudes(
         ),
         tipo_solicitud: Optional[str] = Query(
             None,
-            description="Tipo de solicitud: mision_edicion, factura_edicion, factura_eliminacion"
+            description="Tipo: mision_edicion, factura_edicion, factura_eliminacion"
         ),
         estado: Optional[str] = Query(
             None,
-            description="Estado de la solicitud: approved, rejected, pending"
+            description="Estado: pending, approved, rejected, applied"
         ),
-        page: int = Query(
-            1,
-            ge=1,
-            description="Número de página"
+        origen: Optional[str] = Query(
+            None,
+            description="Origen: manual, automatico, directo"
         ),
-        limit: int = Query(
-            20,
-            ge=1,
-            le=100,
-            description="Cantidad de resultados por página (máximo 100)"
+        flujo: Optional[str] = Query(
+            None,
+            description="Flujo: completo, simplificado"
         ),
+        aplicada: Optional[bool] = Query(
+            None,
+            description="Filtrar por solicitudes aplicadas (true) o no aplicadas (false)"
+        ),
+        page: int = Query(1, ge=1, description="Número de página"),
+        limit: int = Query(20, ge=1, le=100, description="Resultados por página"),
         current_user: dict = Depends(require_bearer_token),
         _: bool = Depends(require_role_access("/mision/solicitudes/listado"))
 ):
     """
-    Obtiene el listado detallado de solicitudes con filtros y paginación.
+    Obtiene el listado detallado de solicitudes con filtros avanzados.
 
     **Retorna:**
     - solicitudes: Lista de solicitudes
@@ -117,7 +120,10 @@ def api_listado_solicitudes(
     - fecha_inicio: Fecha inicial del rango
     - fecha_fin: Fecha final del rango
     - tipo_solicitud: Tipo específico de solicitud
-    - estado: Estado de la solicitud (approved, rejected, pending)
+    - estado: Estado de la solicitud (approved, rejected, pending, applied)
+    - origen: Origen de la solicitud (manual, automatico, directo)
+    - flujo: Flujo de la solicitud (completo, simplificado)
+    - aplicada: Si la solicitud fue aplicada (true/false)
     - page: Número de página (por defecto 1)
     - limit: Cantidad de resultados por página (por defecto 20, máximo 100)
 
@@ -126,7 +132,8 @@ def api_listado_solicitudes(
     GET /mision/solicitudes/listado
     GET /mision/solicitudes/listado?estado=pending
     GET /mision/solicitudes/listado?tipo_solicitud=mision_edicion&estado=approved
-    GET /mision/solicitudes/listado?fecha_inicio=2026-01-01&page=2&limit=50
+    GET /mision/solicitudes/listado?origen=directo&flujo=simplificado
+    GET /mision/solicitudes/listado?aplicada=false&page=2&limit=50
     ```
     """
     try:
@@ -135,13 +142,16 @@ def api_listado_solicitudes(
             fecha_fin=fecha_fin,
             tipo_solicitud=tipo_solicitud,
             estado=estado,
+            origen=origen,
+            flujo=flujo,
+            aplicada=aplicada,
             page=page,
             limit=limit
         )
 
         return {
             "status": 200,
-            "message": "Listado de solicitudes obtenido exitosamente",
+            "message": "Listado obtenido exitosamente",
             "data": resultado
         }
     except Exception as e:
