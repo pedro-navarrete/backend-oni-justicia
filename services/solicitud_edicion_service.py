@@ -152,6 +152,7 @@ def solicitar_edicion_mision(data: SolicitarEdicionMision, current_user: dict) -
         "kilometraje_inicial_anterior": kiloIncial,
         "requested_changes_KilometrajeInicial": data.kilometraje_inicial,
         "status": "pending",  # pending, approved, rejected
+        "applied": False,
         "reviewed_by": None,
         "review_observations": None,
         "created_at": datetime.now(timezone.utc),
@@ -880,6 +881,7 @@ def solicitar_edicion_factura(data: SolicitarEdicionFactura, current_user: dict)
         },
         "cambios_solicitados": cambios_solicitados,
         "status": "pending",
+        "applied": False,
         "reviewed_by": None,
         "review_observations": None,
         "created_at": datetime.now(timezone.utc),
@@ -1023,6 +1025,7 @@ def solicitar_eliminacion_factura(data: SolicitarEliminacionFactura, current_use
             "Cupones": factura_encontrada.get("Cupones", [])
         },
         "status": "pending",
+        "applied": False,
         "reviewed_by": None,
         "review_observations": None,
         "created_at": datetime.now(timezone.utc),
@@ -1205,7 +1208,6 @@ def editar_factura_aprobada(data: EditarFacturaAprobada) -> Dict[str, Any]:
         COLLECTION_SOLICITUDES,
         {"IdSolicitud": data.id_solicitud},
         {"$set": {
-            "status": "applied",
             "applied": True,
             "applied_at": datetime.now(timezone.utc),
             "applied_by": {
@@ -1321,7 +1323,6 @@ def eliminar_factura_aprobada(data: EliminarFacturaAprobada) -> Dict[str, Any]:
         COLLECTION_SOLICITUDES,
         {"IdSolicitud": data.id_solicitud},
         {"$set": {
-            "status": "deleted",
             "applied": True,
             "applied_at": datetime.now(timezone.utc),
             "applied_by": {
