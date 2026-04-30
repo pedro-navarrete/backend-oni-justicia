@@ -1410,3 +1410,197 @@ def _guardar_bitacora_factura(
 
     insert_document(COLLECTION_BITACORA, documento_bitacora)
     logger.info(f"Bitácora de factura guardada: {id_bitacora}")
+
+
+def eliminar_factura_directa(data: EliminarFacturaDirecta, current_user: dict) -> Dict[str, Any]:
+    """
+    Elimina una factura directamente (sin solicitud previa).
+    Guarda la solicitud y bitácora DESPUÉS de ejecutar la eliminación.
+
+    Flujo:
+    1. Validar misión y factura
+    2. Eliminar factura (marcar como deleted)
+    3. Actualizar base de datos
+    4. Crear solicitud (ya aplicada)
+    5. Crear bitácora
+
+    Args:
+        data: Datos de la factura a eliminar
+        current_user: Usuario que realiza la eliminación
+
+    Returns:
+        Diccionario con información de la eliminación
+    """
+    # ==================== 1. VALIDACIONES ====================
+
+    # Buscar la misión
+    mision = _validar_mision_existe({"IdMision": data.id_mision})
+
+    # Buscar la factura
+    factura, factura_index = _validar_factura_existe(mision, data.id_factura)
+
+    # Validar usuario (extraer info)
+    editor = {
+        "dui": current_user.get("Dui") or current_user.get("dui") or "desconocido",
+        "name": current_user.get("FullName") or current_user.get("full_name") or ""
+    }
+
+    # ==================== 2. GUARDAR SNAPSHOT DE LA FACTURA ====================
+
+    factura_snapshot = {
+        "NumeroFactura": factura.get("NumeroFactura"),
+        "CantidadGalones": factura.get("CantidadGalones"),
+        "CantidadDolares": factura.get("CantidadDolares"),
+        "FechaFactura": factura.get("FechaFactura"),
+        "Cupones": factura.get("Cupones", []),
+        "Estado": factura.get("Estado", "active")
+    }
+
+    # ==================== 3. GENERAR ID DE SOLICITUD ====================
+
+    id_solicitud = str(uuid.uuid4())
+
+    # ==================== 4. MARCAR FACTURA COMO ELIMINADA ====================
+
+    facturas = mision.get("Facturas", [])
+
+    # Modificar la factura en el array
+    facturas[factura_index]["Estado"] = "deleted"
+    facturas[factura_index]["TimeStampActualizacion"] = datetime.now(timezone.utc)
+    facturas[factura_index]["SolicitudActiva"] = {
+        "IdSolicitud": id_solicitud,
+        "type": TipoSolicitud.FACTURA_ELIMINACION,
+        "status": EstadoSolicitud.APPROVED,
+        "applied_at": datetime.now(timezone.utc)
+    }
+
+    # ==================== 5. ACTUALIZAR LA MISIÓN EN BD ====================
+
+    updated_count = update_document(
+        COLLECTION_MISIONES,
+        {"IdMision": data.id_mision},
+        {
+            "$set": {
+                "Facturas": facturas,
+                "TimeStampActualizacion": datetime.now(timezone.utc)
+            }
+        }
+    )
+
+    if updated_count <= 0:
+        raise HTTPException(
+            status_code=500,
+            detail="No se pudo actualizar la misión"
+        )
+
+    logger.info(
+        f"[Eliminación Directa] Factura {data.id_factura} marcada como deleted en misión {data.id_mision}"
+    )
+
+    # ==================== 6. CREAR SOLICITUD (YA APLICADA) ====================
+
+    fecha_evento = datetime.now(timezone.utc)
+
+    documento_solicitud = {
+        # Identificación
+        "IdSolicitud": id_solicitud,
+        "type": TipoSolicitud.FACTURA_ELIMINACION,
+
+        # Contexto de la misión
+        "NoMision": mision.get("NoMision"),
+        "IdMision": mision.get("IdMision"),
+        "IdFactura": data.id_factura,
+        "Placa": mision.get("Placa"),
+        "Dui": mision.get("Dui"),
+
+        # Metadata estandarizada (formato V2)
+        "metadata": {
+            "origen": "directo",
+            "flujo": "simplificado",
+            "prioridad": "normal",
+            "razon": "duplicado"
+        },
+
+        # Datos de la eliminación
+        "datos_anteriores": factura_snapshot,
+        "datos_solicitados": {},
+
+        # Descripción
+        "descripcion": data.descripcion or "Eliminación directa de factura",
+        "observaciones_adicionales": None,
+
+        # Estado (ya aplicada)
+        "status": EstadoSolicitud.APPROVED,
+        "applied": True,
+
+        # Usuario (mismo en todos los roles para eliminación directa)
+        "requested_by": editor,
+        "reviewed_by": editor,
+        "applied_by": editor,
+
+        # Observaciones
+        "review_observations": "Eliminación directa aplicada sin flujo de aprobación",
+
+        # Timestamps (todos iguales para eliminación directa)
+        "created_at": fecha_evento,
+        "reviewed_at": fecha_evento,
+        "applied_at": fecha_evento,
+        "TimeStampCreacion": fecha_evento,
+        "TimeStampActualizacion": fecha_evento,
+
+        # Auditoría
+        "auditoria": {
+            "intentos_aprobacion": 0,
+            "modificado_por": [],
+            "ip_origen": None,
+            "dispositivo": "web"
+        }
+    }
+
+    insert_document(COLLECTION_SOLICITUDES, documento_solicitud)
+
+    logger.info(
+        f"[Eliminación Directa] Solicitud creada: {id_solicitud} para factura {data.id_factura}"
+    )
+
+    # ==================== 7. CREAR BITÁCORA ====================
+
+    id_bitacora = str(uuid.uuid4())
+
+    documento_bitacora = {
+        "IdBitacora": id_bitacora,
+        "tipo_operacion": "eliminacion",
+        "tipo_registro": "factura",
+        "IdMision": mision["IdMision"],
+        "NoMision": mision["NoMision"],
+        "Placa": mision.get("Placa"),
+        "Dui": mision.get("Dui"),
+        "IdSolicitud": id_solicitud,
+        "IdFactura": data.id_factura,
+        "editado_por": editor,
+        "solicitado_por": editor,
+        "aprobado_por": editor,
+        "solicitud_type": TipoSolicitud.FACTURA_ELIMINACION,
+        "solicitud_status": EstadoSolicitud.APPROVED,
+        "fecha_operacion": fecha_evento,
+        "factura_eliminada": factura_snapshot,
+        "descripcion": data.descripcion or "Eliminación directa de factura"
+    }
+
+    insert_document(COLLECTION_BITACORA, documento_bitacora)
+
+    logger.info(
+        f"[Eliminación Directa] Bitácora creada: {id_bitacora} para factura {data.id_factura}"
+    )
+
+    # ==================== 8. RETORNAR RESULTADO ====================
+
+    return {
+        "no_mision": mision["NoMision"],
+        "id_factura": data.id_factura,
+        "numero_factura": factura_snapshot.get("NumeroFactura"),
+        "eliminado_por": editor.get("name"),
+        "fecha_eliminacion": fecha_evento,
+        "id_solicitud": id_solicitud,
+        "id_bitacora": id_bitacora
+    }

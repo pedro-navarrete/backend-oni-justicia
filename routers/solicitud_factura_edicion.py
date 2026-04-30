@@ -8,13 +8,15 @@ from models.edicion_models import (
     SolicitarEdicionFactura,
     SolicitarEliminacionFactura,
     EditarFacturaAprobada,
-    EliminarFacturaAprobada
+    EliminarFacturaAprobada,
+    EliminarFacturaDirecta
 )
 from services.solicitud_edicion_service import (
     solicitar_edicion_factura,
     solicitar_eliminacion_factura,
     editar_factura_aprobada,
-    eliminar_factura_aprobada
+    eliminar_factura_aprobada,
+    eliminar_factura_directa
 )
 
 
@@ -158,6 +160,49 @@ def api_eliminar_factura_con_solicitud(
         raise e
     except Exception as e:
         logger.error(f"Error eliminando factura: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error eliminando factura: {str(e)}"
+        )
+
+
+@router.delete("/factura/eliminar-directa",
+               summary="Eliminar factura directamente (sin solicitud previa)",
+               description="Elimina una factura de forma directa sin requerir solicitud de aprobación previa"
+               )
+def api_eliminar_factura_directa(
+        payload: EliminarFacturaDirecta,
+        current_user: dict = Depends(require_bearer_token),
+        _: bool = Depends(require_role_access("/mision/factura/eliminar-directa"))
+):
+    """
+    Endpoint para eliminar una factura directamente (sin solicitud previa).
+
+    **Flujo de eliminación directa:**
+    1. Se valida que la misión y factura existan
+    2. Se marca la factura como eliminada inmediatamente
+    3. Se crea una solicitud (ya aplicada) para auditoría
+    4. Se guarda en bitácora
+
+    **Diferencias vs eliminación con solicitud:**
+    - ✅ No requiere solicitud previa
+    - ✅ No requiere aprobación
+    - ✅ Se ejecuta inmediatamente
+    - ✅ Crea registro de solicitud DESPUÉS de ejecutar (para auditoría)
+
+    **Importante:** La eliminación es permanente (marca Estado: "deleted").
+    """
+    try:
+        resultado = eliminar_factura_directa(payload, current_user)
+        return {
+            "status": 200,
+            "message": "Factura eliminada directamente exitosamente",
+            "data": resultado
+        }
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Error eliminando factura directamente: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Error eliminando factura: {str(e)}"
