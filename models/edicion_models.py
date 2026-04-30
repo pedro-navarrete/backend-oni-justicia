@@ -169,6 +169,27 @@ class EliminarFacturaAprobada(BaseModel):
         }
 
 
+class EliminarFacturaDirecta(BaseModel):
+    """
+    Modelo para eliminar una factura directamente (sin solicitud previa).
+    """
+    id_mision: str = Field(..., description="ID de la misión")
+    id_factura: str = Field(..., description="ID de la factura a eliminar")
+    descripcion: Optional[str] = Field(
+        "Eliminación directa de factura",
+        description="Descripción del motivo de la eliminación"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "id_mision": "550e8400-e29b-41d4-a716-446655440000",
+                "id_factura": "660e8400-e29b-41d4-a716-446655440001",
+                "descripcion": "Factura duplicada, se elimina directamente"
+            }
+        }
+
+
 class EstadisticasSolicitudesFiltro(BaseModel):
     """
     Modelo para los filtros del endpoint de estadísticas de solicitudes.
